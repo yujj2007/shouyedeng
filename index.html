@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>守夜灯 · 高危声音守卫（交互原型）</title>
+  <title>守夜灯 · 居家声音守卫（交互原型）</title>
   <style>
 :root {
   --bg: #0f1115;
@@ -15,6 +15,7 @@
   --danger: #ff4d4f;
   --danger-strong: #c81e1e;
   --warn: #ffb020;
+  --info: #4aa3ff;
   --ok: #37c46b;
   --focus: #7cc4ff;
   --radius: 12px;
@@ -152,6 +153,8 @@ select:focus-visible,
 .shape-diamond  { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); background: var(--danger); }
 .shape-circle   { border-radius: 50%; background: var(--warn); }
 .shape-square   { border-radius: 6px; background: var(--warn); }
+.shape-hex      { clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%); background: var(--warn); }
+.shape-pill     { border-radius: 999px; background: var(--info); }
 
 /* ---------- 看板 ---------- */
 .board { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -360,6 +363,38 @@ body.reduced .vibrate { display: none; }
   .sim-grid { grid-template-columns: 1fr; }
 }
 
+/* ---------- L1 环境事件：平静呈现，不闪烁 ---------- */
+.alert-overlay.level-1 { background: #0c1a2a; animation: none; }
+.alert-card.level-1 { border-color: var(--info); }
+.alert-card.level-1 .alert-action { border-left-color: var(--info); background: #0d1a28; }
+.alert-card.level-1 .alert-urgency { color: #a9d2ff; }
+body.reduced .alert-overlay.level-1 { background: #0c1a2a; }
+
+/* ---------- 家外噪音按钮（弱化）---------- */
+.noise-btn { border-style: dashed; opacity: .85; }
+.noise-btn .sim-shape { background: #48505f; color: #cfd6e2; }
+.noise-btn small { color: #8f96a4; }
+
+/* ---------- 记录中的“已忽略”行 ---------- */
+tr.suppressed { color: var(--muted); }
+tr.suppressed .type-cell { opacity: .8; }
+.status-ignored { color: var(--muted); }
+
+/* ---------- 睡前安全确认弹层 ---------- */
+.alert-overlay.bedtime { background: rgba(6, 10, 16, .82); animation: none; }
+.bedtime-card { border-color: var(--info); width: min(560px, 100%); }
+body.reduced .bedtime-card { border-width: 4px; }
+.bedtime-title { margin: 0 0 6px; font-size: 26px; letter-spacing: 2px; }
+.checklist { list-style: none; margin: 18px 0; padding: 0; }
+.checklist li { margin-bottom: 12px; }
+.checklist label { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; font-size: 17px; }
+.checklist input { width: 22px; height: 22px; margin-top: 2px; accent-color: var(--ok); flex: none; }
+.bedtime-actions { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+.ack-btn.small { flex: 1; font-size: 18px; padding: 14px; }
+
+/* ---------- 通用按钮（睡前入口）---------- */
+.sim-btn#openBedtime { border-color: var(--info); }
+
 </style>
 </head>
 <body>
@@ -368,7 +403,7 @@ body.reduced .vibrate { display: none; }
   <header class="topbar">
     <div class="brand">
       <span class="brand-name">守夜灯</span>
-      <span class="brand-sub">独居听障者 · 高危声音守卫</span>
+      <span class="brand-sub">居家听障者 · 从睡前到天亮</span>
     </div>
     <div class="status">
       <span class="pill" id="monitorStatus">值守中</span>
@@ -377,11 +412,28 @@ body.reduced .vibrate { display: none; }
   </header>
 
   <main id="main" class="layout">
-    <!-- 模拟触发 -->
+    <!-- 睡前安全确认 -->
+    <section class="panel" aria-labelledby="bedTitle">
+      <h2 id="bedTitle">睡前安全确认</h2>
+      <p class="hint">入睡前逐项确认，预防取暖设备等忘关引燃；完成后进入睡眠值守。</p>
+      <button type="button" class="sim-btn" id="openBedtime" style="justify-content:center">
+        <span>开始睡前安全确认</span>
+      </button>
+      <p class="hint" id="bedLast" style="margin-top:12px">上次确认：暂无</p>
+    </section>
+
+    <!-- 模拟家内事件 -->
     <section class="panel" aria-labelledby="simTitle">
-      <h2 id="simTitle">模拟高危事件</h2>
-      <p class="hint">原型演示用：点击按钮，模拟家中识别到的声音事件并触发告警。</p>
+      <h2 id="simTitle">模拟家内事件</h2>
+      <p class="hint">原型演示用：点击按钮，模拟系统识别到的家内声音事件并触发分级告警。</p>
       <div class="sim-grid" id="simButtons"></div>
+    </section>
+
+    <!-- 模拟家外噪音 -->
+    <section class="panel" aria-labelledby="noiseTitle">
+      <h2 id="noiseTitle">模拟家外噪音（应被忽略）</h2>
+      <p class="hint">点击后只会记录为“已忽略”，<strong>不触发任何告警</strong>，体现室内外声源判别。</p>
+      <div class="sim-grid" id="noiseButtons"></div>
     </section>
 
     <!-- 监测看板 -->
@@ -395,8 +447,10 @@ body.reduced .vibrate { display: none; }
       <h2 id="recTitle">事件记录</h2>
       <div class="filters" id="filters" role="group" aria-label="按级别筛选记录">
         <button type="button" class="chip" data-filter="all" aria-pressed="true">全部</button>
-        <button type="button" class="chip" data-filter="3" aria-pressed="false">生命危险（L3）</button>
-        <button type="button" class="chip" data-filter="2" aria-pressed="false">高风险（L2）</button>
+        <button type="button" class="chip" data-filter="3" aria-pressed="false">生命危险 L3</button>
+        <button type="button" class="chip" data-filter="2" aria-pressed="false">高风险 L2</button>
+        <button type="button" class="chip" data-filter="1" aria-pressed="false">环境事件 L1</button>
+        <button type="button" class="chip" data-filter="0" aria-pressed="false">已忽略（家外）</button>
         <button type="button" class="ghost" id="clearRecords">清空记录</button>
       </div>
       <div id="recordsWrap" class="records-wrap"></div>
@@ -413,7 +467,7 @@ body.reduced .vibrate { display: none; }
         </div>
       </div>
       <div class="field">
-        <label class="field-label" for="sensitivity">识别灵敏度（高危事件触发阈值）</label>
+        <label class="field-label" for="sensitivity">识别灵敏度（家内事件触发阈值）</label>
         <select id="sensitivity" class="select">
           <option value="high">高（更敏感，减少漏报）</option>
           <option value="mid">中</option>
@@ -426,11 +480,11 @@ body.reduced .vibrate { display: none; }
           <span>减少动态效果（关闭闪烁，改用静态高对比强调）</span>
         </label>
       </div>
-      <p class="hint" id="savedHint">设置会自动保存，刷新后仍然有效。</p>
+      <p class="hint">设置会自动保存，刷新后仍然有效。</p>
     </section>
 
     <!-- 边界状态演示 -->
-    <section class="panel" aria-labelledby="edgeTitle">
+    <section class="panel panel-wide" aria-labelledby="edgeTitle">
       <h2 id="edgeTitle">演示：边界与异常状态</h2>
       <p class="hint">对应功能详述中的“信息缺失 / 加载失败 / 数据为空”。点击可在看板上预览处理方式。</p>
       <div class="sim-grid">
@@ -442,23 +496,14 @@ body.reduced .vibrate { display: none; }
     </section>
   </main>
 
-  <!-- 无障碍实时播报 -->
   <div id="liveRegion" class="sr-only" role="status" aria-live="assertive"></div>
 
   <!-- 告警覆盖层 -->
-  <div
-    id="alertOverlay"
-    class="alert-overlay"
-    role="alertdialog"
-    aria-modal="true"
-    aria-labelledby="alertType"
-    aria-describedby="alertAction"
-    hidden
-  >
+  <div id="alertOverlay" class="alert-overlay" role="alertdialog" aria-modal="true"
+       aria-labelledby="alertType" aria-describedby="alertAction" hidden>
     <div class="alert-flash" aria-hidden="true"></div>
     <div class="alert-card" id="alertCard">
       <p class="escalate-banner" id="escalateBanner" hidden>未确认，告警强度提升</p>
-
       <div class="alert-head">
         <span class="shape shape-triangle" id="alertShape"><span class="shape-glyph" id="alertGlyph">火</span></span>
         <div class="alert-types">
@@ -466,87 +511,101 @@ body.reduced .vibrate { display: none; }
           <p class="alert-urgency" id="alertUrgency">生命危险 · 立即行动</p>
         </div>
       </div>
-
       <p class="alert-action" id="alertAction">立即离开房间，走安全通道</p>
-
       <dl class="alert-meta">
         <div><dt>来源区域</dt><dd id="alertRegion">厨房</dd></div>
-        <div><dt>震动 / 强光</dt><dd id="alertChannels">已启动</dd></div>
+        <div><dt>唤醒通道</dt><dd id="alertChannels">强光 + 震动 + 屏幕</dd></div>
       </dl>
-
       <div id="alertVibrate" class="vibrate" aria-hidden="true">
         <span class="vibrate-bar"></span><span class="vibrate-bar"></span><span class="vibrate-bar"></span>
       </div>
-
       <button type="button" class="ack-btn" id="ackBtn">
         <span class="ack-fill" aria-hidden="true"></span>
         <span class="ack-label">长按确认「我已知晓并处理」</span>
       </button>
       <p class="ack-count" id="ackCount" aria-hidden="true"></p>
-      <p class="ack-hint">按住按钮 1.5 秒以确认（键盘用户可按住空格 / 回车）。未确认将自动升级。</p>
+      <p class="ack-hint" id="ackHint">按住按钮 1.5 秒以确认（键盘用户可按住空格 / 回车）。未确认将自动升级。</p>
+    </div>
+  </div>
+
+  <!-- 睡前安全确认弹层 -->
+  <div id="bedtimeOverlay" class="alert-overlay bedtime" role="dialog" aria-modal="true"
+       aria-labelledby="bedtimeTitle" hidden>
+    <div class="alert-card bedtime-card">
+      <h2 class="bedtime-title" id="bedtimeTitle">睡前安全确认</h2>
+      <p class="hint">请逐项确认，全部完成后进入睡眠值守。</p>
+      <ul class="checklist">
+        <li><label><input type="checkbox" data-item="heater" /> 取暖设备（烤火炉 / 电暖器）已关闭</label></li>
+        <li><label><input type="checkbox" data-item="gas" /> 燃气阀门 / 灶具已关闭</label></li>
+        <li><label><input type="checkbox" data-item="lock" /> 门窗已锁好</label></li>
+      </ul>
+      <p class="hint">无智能设备数据时请自行确认——系统不会假装知道设备状态。</p>
+      <div class="bedtime-actions">
+        <button type="button" class="ack-btn small" id="bedtimeDone"><span class="ack-label">完成，进入值守</span></button>
+        <button type="button" class="ghost" id="bedtimeCancel">稍后</button>
+      </div>
     </div>
   </div>
 
   <script>
-/* 守夜灯 · 高危声音守卫（交互原型）
+/* 守夜灯 · 居家声音守卫（交互原型 v2）
  * 纯前端：数据存于 localStorage；无后端。
- * 覆盖 F1 识别分级 / F2 多通道唤醒 / F3 行动引导 / F4 确认+自动升级 / F5 事件记录
+ * 覆盖 F1 室内外判别与分级 / F2 多通道唤醒 / F3 行动引导 / F4 睡前安全确认 / F5 确认+升级+记录
  */
 (function () {
   "use strict";
 
-  /* ---------------- 事件类型定义（分级 + 形状 + 行动指令） ---------------- */
-  // 形状与文字冗余编码：即使不看颜色也能区分
+  /* ---------------- 事件类型（家内）---------------- */
   var TYPES = {
-    fire:  { key: "fire",  label: "火警",           glyph: "火", shape: "triangle", level: 3, region: "厨房",
-             urgency: "生命危险 · 立即行动", action: "立即离开房间，走安全通道" },
-    gas:   { key: "gas",   label: "燃气泄漏",        glyph: "气", shape: "diamond",  level: 3, region: "厨房",
-             urgency: "生命危险 · 立即行动", action: "不要开关电器，开窗并撤离" },
-    water: { key: "water", label: "水开溢出 / 干烧", glyph: "水", shape: "circle",   level: 2, region: "厨房",
-             urgency: "高风险 · 尽快处理", action: "前往厨房关闭火源 / 电源" },
-    door:  { key: "door",  label: "门外持续异响",    glyph: "门", shape: "square",   level: 2, region: "门口",
-             urgency: "高风险 · 尽快确认", action: "先确认门外情况，勿贸然开门" }
+    fire:   { key: "fire",   label: "火警",            glyph: "火", shape: "triangle", level: 3, region: "厨房",
+              urgency: "生命危险 · 立即行动", action: "立即离开房间，走安全通道" },
+    gas:    { key: "gas",    label: "燃气泄漏",         glyph: "气", shape: "diamond",  level: 3, region: "厨房",
+              urgency: "生命危险 · 立即行动", action: "不要开关电器，开窗并撤离" },
+    heater: { key: "heater", label: "取暖设备异常 / 忘关", glyph: "暖", shape: "hex",     level: 2, region: "客厅",
+              urgency: "高风险 · 尽快处理", action: "前往关闭取暖设备，移开周围易燃物" },
+    water:  { key: "water",  label: "水开溢出 / 干烧",  glyph: "水", shape: "circle",   level: 2, region: "厨房",
+              urgency: "高风险 · 尽快处理", action: "前往厨房关闭火源 / 电源" },
+    door:   { key: "door",   label: "门外持续异响",     glyph: "门", shape: "square",   level: 2, region: "门口",
+              urgency: "高风险 · 尽快确认", action: "先确认门外情况，勿贸然开门" },
+    drop:   { key: "drop",   label: "家内物品跌落",     glyph: "物", shape: "pill",     level: 1, region: "客厅",
+              urgency: "环境事件 · 已记录", action: "查看是否有物品损坏或需要处理" }
+  };
+
+  /* ---------------- 家外噪音（应被忽略）---------------- */
+  var NOISES = {
+    honk: { key: "honk", label: "汽车鸣笛", glyph: "笛", shape: "square", region: "室外" },
+    talk: { key: "talk", label: "他人交谈声", glyph: "谈", shape: "pill",  region: "室外" }
   };
 
   var STORE_EVENTS = "shouyedeng.events";
   var STORE_SETTINGS = "shouyedeng.settings";
 
-  /* ---------------- 存储（含失败兜底） ---------------- */
+  /* ---------------- 存储（含失败兜底）---------------- */
   var storageError = false;
-
   function readJSON(key, fallback) {
     try {
       var raw = localStorage.getItem(key);
-      if (raw === null) return fallback;
-      return JSON.parse(raw);
-    } catch (e) {
-      storageError = true;
-      return fallback;
-    }
+      return raw === null ? fallback : JSON.parse(raw);
+    } catch (e) { storageError = true; return fallback; }
   }
-
   function writeJSON(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
-      storageError = true;
-    }
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { storageError = true; }
   }
 
   /* ---------------- 状态 ---------------- */
   var defaultSettings = {
     mode: "night",
     sensitivity: "high",
-    reduceMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    reduceMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    lastBedtime: null
   };
-
   var settings = Object.assign({}, defaultSettings, readJSON(STORE_SETTINGS, {}));
   var events = readJSON(STORE_EVENTS, []);
   if (!Array.isArray(events)) events = [];
 
   var filter = "all";
-  var edgeDemo = null;           // null | 'loadfail' | 'empty' | 'missing'
-  var current = null;            // 当前告警事件
+  var edgeDemo = null;
+  var current = null;
   var escTimers = [];
   var prevFocus = null;
 
@@ -556,64 +615,59 @@ body.reduced .vibrate { display: none; }
   var ackBtn = $("ackBtn");
   var ackCount = $("ackCount");
   var liveRegion = $("liveRegion");
+  var bedOverlay = $("bedtimeOverlay");
 
   /* ---------------- 工具 ---------------- */
   function fmtTime(ts) {
-    try {
-      return new Date(ts).toLocaleString("zh-CN", { hour12: false });
-    } catch (e) {
-      return "未知";
-    }
+    try { return new Date(ts).toLocaleString("zh-CN", { hour12: false }); } catch (e) { return "未知"; }
   }
-
   function announce(text) {
     liveRegion.textContent = "";
-    // 重新触发读屏
     window.setTimeout(function () { liveRegion.textContent = text; }, 30);
   }
-
   function isToday(ts) {
     var d = new Date(ts), n = new Date();
     return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+  }
+  function levelLabel(l) {
+    return l === 3 ? "生命危险 (L3)" : l === 2 ? "高风险 (L2)" : l === 1 ? "环境事件 (L1)" : "家外噪音";
   }
 
   /* ---------------- 设置 ---------------- */
   function applySettings() {
     document.body.classList.toggle("reduced", !!settings.reduceMotion);
-    // 顶栏模式
     $("modeLabel").textContent = settings.mode === "bath" ? "洗浴模式" : "夜间模式";
-    // 分段控件
     Array.prototype.forEach.call(document.querySelectorAll("#modeGroup .chip"), function (btn) {
       btn.setAttribute("aria-checked", String(btn.dataset.mode === settings.mode));
     });
     $("sensitivity").value = settings.sensitivity;
     $("reduceMotion").checked = !!settings.reduceMotion;
   }
-
-  function saveSettings() {
-    writeJSON(STORE_SETTINGS, settings);
-  }
+  function saveSettings() { writeJSON(STORE_SETTINGS, settings); }
 
   /* ---------------- 看板 ---------------- */
   function renderBoard() {
-    var todayCount = events.filter(function (e) { return isToday(e.ts); }).length;
-    var pending = events.filter(function (e) { return !e.acked; }).length;
-    var last = events.length ? events[events.length - 1] : null;
+    var inner = events.filter(function (e) { return e.level >= 1; });
+    var todayCount = inner.filter(function (e) { return isToday(e.ts); }).length;
+    var pending = inner.filter(function (e) { return !e.acked; }).length;
+    var ignored = events.filter(function (e) { return e.level === 0 && isToday(e.ts); }).length;
 
     var html = "";
     html += boardItem("值守状态", "值守中");
     html += boardItem("当前模式", settings.mode === "bath" ? "洗浴" : "夜间睡眠");
-    html += boardItem("今日事件", String(todayCount));
+    html += boardItem("今日家内事件", String(todayCount));
     html += boardItem("未确认事件", String(pending));
-    html += boardItem("上次事件", last ? fmtTime(last.ts) : "暂无");
+    html += boardItem("已忽略噪音", String(ignored));
+    html += boardItem("上次睡前确认", settings.lastBedtime ? fmtTime(settings.lastBedtime) : "暂无");
     html += boardItem("识别灵敏度", settings.sensitivity === "high" ? "高" : settings.sensitivity === "mid" ? "中" : "低");
+    html += boardItem("室内外判别", "已开启");
 
     if (storageError || edgeDemo === "loadfail") {
       html = boardNotice("读取本地记录失败，已回退为空列表；本次仍可继续使用，但记录可能无法保存。") + html;
     }
     $("board").innerHTML = html;
+    $("bedLast").textContent = "上次确认：" + (settings.lastBedtime ? fmtTime(settings.lastBedtime) : "暂无");
   }
-
   function boardItem(k, v) {
     return '<div class="board-item"><div class="k">' + k + '</div><div class="v">' + v + "</div></div>";
   }
@@ -625,171 +679,129 @@ body.reduced .vibrate { display: none; }
   function miniShape(type) {
     return '<span class="mini-shape shape-' + type.shape + ' shape" aria-hidden="true">' + type.glyph + "</span>";
   }
-
   function renderRecords() {
     var wrap = $("recordsWrap");
-
     if (edgeDemo === "loadfail") {
       wrap.innerHTML = '<div class="board-notice">读取记录失败，已回退为空列表。</div>' +
         '<div class="empty-state"><strong>无法读取记录</strong>请刷新页面后重试。</div>';
       return;
     }
-    if (edgeDemo === "empty") {
-      wrap.innerHTML = emptyState();
-      return;
-    }
+    if (edgeDemo === "empty") { wrap.innerHTML = emptyState(); return; }
 
     var rows = events.slice();
-    if (filter !== "all") {
-      rows = rows.filter(function (e) { return String(e.level) === filter; });
-    }
+    if (filter !== "all") rows = rows.filter(function (e) { return String(e.level) === filter; });
 
     if (edgeDemo === "missing") {
-      rows.unshift({
-        id: "demo-missing", key: "unknown", label: "未知危险", level: 2,
-        region: null, ts: Date.now(), acked: false, missing: true
-      });
+      rows.unshift({ id: "demo-missing", key: "unknown", label: "未知危险", level: 2, region: null, ts: Date.now(), acked: false, missing: true });
     }
-
-    if (!rows.length) {
-      wrap.innerHTML = emptyState();
-      return;
-    }
-
-    // 时间倒序
+    if (!rows.length) { wrap.innerHTML = emptyState(); return; }
     rows.sort(function (a, b) { return b.ts - a.ts; });
 
     var html = '<table class="records"><thead><tr>' +
-      "<th>时间</th><th>事件</th><th>级别</th><th>来源区域</th><th>状态</th>" +
-      "</tr></thead><tbody>";
-
+      "<th>时间</th><th>事件</th><th>级别</th><th>来源区域</th><th>状态</th></tr></thead><tbody>";
     rows.forEach(function (e) {
-      var type = TYPES[e.key] || { label: e.label || "未知危险", glyph: "?", shape: "square" };
+      var type = TYPES[e.key] || NOISES[e.key] || { label: e.label || "未知", glyph: "?", shape: "square" };
       var region = e.region || "未知";
-      var levelText = e.level === 3 ? "生命危险 (L3)" : e.level === 2 ? "高风险 (L2)" : "未知";
-      var status = e.acked
-        ? '<span class="status-acked">已确认</span>'
-        : '<span class="status-pending">未确认</span>';
-      html += "<tr>" +
+      var status = e.level === 0
+        ? '<span class="status-ignored">已忽略（未打扰）</span>'
+        : (e.acked ? '<span class="status-acked">已确认</span>' : '<span class="status-pending">未确认</span>');
+      html += '<tr class="' + (e.level === 0 ? "suppressed" : "") + '">' +
         "<td>" + fmtTime(e.ts) + "</td>" +
         '<td><span class="type-cell">' + miniShape(type) + "<span>" + (e.label || type.label) + "</span></span></td>" +
-        "<td>" + levelText + "</td>" +
+        "<td>" + levelLabel(e.level) + "</td>" +
         "<td>" + region + "</td>" +
-        "<td>" + status + "</td>" +
-        "</tr>";
+        "<td>" + status + "</td></tr>";
     });
-
-    html += "</tbody></table>";
-    wrap.innerHTML = html;
+    wrap.innerHTML = html + "</tbody></table>";
   }
-
   function emptyState() {
     return '<div class="empty-state"><strong>暂无事件记录</strong>' +
-      "当系统识别到高危声音事件时，会在此生成记录；刷新页面也不会丢失。</div>";
+      "当系统识别到家内声音事件时会在此生成记录；家外噪音会被标记为“已忽略”。刷新页面也不会丢失。</div>";
   }
 
   /* ---------------- 模拟按钮 ---------------- */
+  function makeSimBtn(type, opts) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "sim-btn" + (opts.noise ? " noise-btn" : "");
+    var sub = opts.noise ? "家外噪音 · 将被忽略" :
+      (type.level === 3 ? "生命危险 L3" : type.level === 2 ? "高风险 L2" : "环境事件 L1") + " · 来源：" + type.region;
+    btn.innerHTML =
+      '<span class="sim-shape shape-' + type.shape + ' shape" aria-hidden="true">' + type.glyph + "</span>" +
+      "<span>" + type.label + "<small>" + sub + "</small></span>";
+    btn.addEventListener("click", function () { opts.noise ? triggerNoise(type.key) : triggerEvent(type.key); });
+    return btn;
+  }
   function renderSimButtons() {
-    var box = $("simButtons");
-    box.innerHTML = "";
-    Object.keys(TYPES).forEach(function (key) {
-      var t = TYPES[key];
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "sim-btn";
-      btn.innerHTML =
-        '<span class="sim-shape shape-' + t.shape + ' shape" aria-hidden="true">' + t.glyph + "</span>" +
-        "<span>" + t.label +
-        "<small>" + (t.level === 3 ? "生命危险 L3" : "高风险 L2") + " · 来源：" + t.region + "</small></span>";
-      btn.addEventListener("click", function () { triggerEvent(key); });
-      box.appendChild(btn);
-    });
+    var box = $("simButtons"); box.innerHTML = "";
+    Object.keys(TYPES).forEach(function (k) { box.appendChild(makeSimBtn(TYPES[k], { noise: false })); });
+    var nbox = $("noiseButtons"); nbox.innerHTML = "";
+    Object.keys(NOISES).forEach(function (k) { nbox.appendChild(makeSimBtn(NOISES[k], { noise: true })); });
   }
 
-  /* ---------------- F1/F2/F3/F4：触发告警 ---------------- */
+  /* ---------------- F1/F2/F3：家内事件 → 分级告警 ---------------- */
   function triggerEvent(key) {
-    var t = TYPES[key];
-    if (!t) return;
-
-    var ev = {
-      id: "e" + Date.now(),
-      key: key,
-      label: t.label,
-      level: t.level,
-      region: t.region,
-      ts: Date.now(),
-      acked: false,
-      ackTs: null
-    };
-    events.push(ev);
-    events = events.slice(-200); // 限制数量
+    var t = TYPES[key]; if (!t) return;
+    var ev = { id: "e" + Date.now(), key: key, label: t.label, level: t.level, region: t.region, ts: Date.now(), acked: false, ackTs: null };
+    events.push(ev); events = events.slice(-200);
     writeJSON(STORE_EVENTS, events);
-    renderBoard();
-    renderRecords();
-
+    renderBoard(); renderRecords();
     openAlert(ev, t);
+  }
+
+  function triggerNoise(key) {
+    var n = NOISES[key]; if (!n) return;
+    var ev = { id: "n" + Date.now(), key: key, label: n.label + "（家外）", level: 0, region: n.region, ts: Date.now(), acked: true, ackTs: null };
+    events.push(ev); events = events.slice(-200);
+    writeJSON(STORE_EVENTS, events);
+    renderBoard(); renderRecords();
+    announce("已忽略家外噪音：" + n.label + "，未打扰");
   }
 
   function openAlert(ev, t) {
     current = ev;
     prevFocus = document.activeElement;
 
-    // 形状（多重编码：形状 + 字符 + 颜色 + 文字）
     var shape = $("alertShape");
     shape.className = "shape shape-" + t.shape;
     $("alertGlyph").textContent = t.glyph;
-
     $("alertType").textContent = t.label;
     $("alertUrgency").textContent = t.urgency;
     $("alertAction").textContent = t.action;
     $("alertRegion").textContent = ev.region || "未知（位置信息缺失）";
+    $("ackCount").textContent = "";
 
-    var card = $("alertCard");
-    card.className = "alert-card" + (t.level === 2 ? " level-2" : "");
-
+    var isL1 = t.level === 1;
+    $("alertCard").className = "alert-card" + (t.level === 1 ? " level-1" : t.level === 2 ? " level-2" : "");
     overlay.className = "alert-overlay level-" + t.level;
     $("escalateBanner").hidden = true;
     $("escalateBanner").textContent = "";
 
-    // 唤醒通道状态
-    var channels = [];
-    if (!settings.reduceMotion) channels.push("强光闪烁");
-    channels.push("震动");
-    channels.push("屏幕点亮");
-    $("alertChannels").textContent = channels.join(" + ");
+    var channels = isL1 ? "轻提示（不闪烁）" : (settings.reduceMotion ? "震动 + 屏幕点亮（已关闭闪烁）" : "强光闪烁 + 震动 + 屏幕点亮");
+    $("alertChannels").textContent = channels;
+
+    var label = ackBtn.querySelector(".ack-label");
+    label.textContent = isL1 ? "知道了（点击 / 回车）" : "长按确认「我已知晓并处理」";
+    $("ackHint").textContent = isL1 ? "环境事件已记录，点击即可关闭。" : "按住按钮 1.5 秒以确认（键盘用户可按住空格 / 回车）。未确认将自动升级。";
 
     overlay.hidden = false;
-    startVibration();
-    startEscalation(t.level);
-
-    // 焦点移入并锁定
+    if (!isL1) { startVibration(); startEscalation(t.level); }
     ackBtn.focus();
     announce(t.label + "。" + t.urgency + "。" + t.action);
   }
 
-  function startVibration() {
-    if (navigator.vibrate) {
-      try { navigator.vibrate([600, 200, 600, 200, 600]); } catch (e) {}
-    }
-  }
-  function stopVibration() {
-    if (navigator.vibrate) { try { navigator.vibrate(0); } catch (e) {} }
-  }
+  function startVibration() { if (navigator.vibrate) { try { navigator.vibrate([600, 200, 600, 200, 600]); } catch (e) {} } }
+  function stopVibration() { if (navigator.vibrate) { try { navigator.vibrate(0); } catch (e) {} } }
 
-  /* F4：未确认则自动升级（洗浴模式因水声遮蔽，升级更快） */
-  function startEscalation(level) {
+  /* F5：未确认自动升级（洗浴模式因水声遮蔽更快） */
+  function startEscalation() {
     clearEscalation();
     var base = settings.mode === "bath" ? 5000 : 8000;
     escTimers.push(window.setTimeout(function () { escalate(1); }, base));
     escTimers.push(window.setTimeout(function () { escalate(2); }, base + 8000));
     escTimers.push(window.setTimeout(function () { escalate(3); }, base + 16000));
   }
-
-  function clearEscalation() {
-    escTimers.forEach(function (t) { window.clearTimeout(t); });
-    escTimers = [];
-  }
-
+  function clearEscalation() { escTimers.forEach(function (t) { window.clearTimeout(t); }); escTimers = []; }
   function escalate(n) {
     if (!current || current.acked) return;
     var banner = $("escalateBanner");
@@ -800,31 +812,24 @@ body.reduced .vibrate { display: none; }
     announce("仍未确认，告警强度提升第 " + n + " 级");
   }
 
-  /* ---------------- F4：长按确认（防误关 + 键盘可达） ---------------- */
-  var HOLD_MS = 1500;
-  var holding = false;
-  var holdTimer = null;
-  var rafId = null;
-  var holdStart = 0;
+  /* ---------------- F5：长按确认（L1 点击即可）---------------- */
+  var HOLD_MS = 1500, holding = false, holdTimer = null, rafId = null, holdStart = 0;
 
   function startHold() {
     if (!current || current.acked || holding) return;
+    if (current.level === 1) { completeAck(); return; }
     holding = true;
     ackBtn.classList.add("pressing");
     holdStart = performance.now();
     rafId = window.requestAnimationFrame(tickHold);
     holdTimer = window.setTimeout(completeAck, HOLD_MS);
   }
-
   function tickHold() {
     if (!holding) return;
     var p = Math.min(1, (performance.now() - holdStart) / HOLD_MS);
-    ackCount.textContent = p < 1
-      ? "确认中… 还需 " + ((HOLD_MS * (1 - p)) / 1000).toFixed(1) + " 秒"
-      : "已确认";
+    ackCount.textContent = p < 1 ? "确认中… 还需 " + ((HOLD_MS * (1 - p)) / 1000).toFixed(1) + " 秒" : "已确认";
     rafId = window.requestAnimationFrame(tickHold);
   }
-
   function cancelHold() {
     if (!holding) return;
     holding = false;
@@ -833,7 +838,6 @@ body.reduced .vibrate { display: none; }
     ackBtn.classList.remove("pressing");
     ackCount.textContent = "";
   }
-
   function completeAck() {
     if (!current || current.acked) return;
     holding = false;
@@ -845,84 +849,89 @@ body.reduced .vibrate { display: none; }
     current.ackTs = Date.now();
     current.ackMs = current.ackTs - current.ts;
     writeJSON(STORE_EVENTS, events);
-    stopVibration();
-    clearEscalation();
+    stopVibration(); clearEscalation();
     announce(current.label + " 已确认处理");
     window.setTimeout(closeAlert, 550);
   }
-
   function closeAlert() {
-    clearEscalation();
-    stopVibration();
+    clearEscalation(); stopVibration();
     overlay.hidden = true;
     overlay.className = "alert-overlay";
     $("escalateBanner").hidden = true;
     current = null;
-    renderBoard();
-    renderRecords();
+    renderBoard(); renderRecords();
     if (prevFocus && prevFocus.focus) prevFocus.focus();
   }
 
-  /* 键盘：按住空格 / 回车 */
   ackBtn.addEventListener("keydown", function (e) {
-    if (e.key === " " || e.key === "Enter") {
-      if (e.repeat) return;
-      e.preventDefault();
-      startHold();
-    }
+    if (e.key === " " || e.key === "Enter") { if (e.repeat) return; e.preventDefault(); startHold(); }
   });
   ackBtn.addEventListener("keyup", function (e) {
-    if (e.key === " " || e.key === "Enter") {
-      e.preventDefault();
-      cancelHold();
-    }
+    if (e.key === " " || e.key === "Enter") { e.preventDefault(); cancelHold(); }
   });
   ackBtn.addEventListener("blur", cancelHold);
-
-  /* 鼠标 / 触摸：按住 */
-  ackBtn.addEventListener("pointerdown", function (e) {
-    if (e.button !== 0) return;
-    startHold();
-  });
+  ackBtn.addEventListener("pointerdown", function (e) { if (e.button === 0) startHold(); });
   ackBtn.addEventListener("pointerup", cancelHold);
   ackBtn.addEventListener("pointercancel", cancelHold);
   ackBtn.addEventListener("pointerleave", cancelHold);
 
-  /* 焦点锁定 + Esc 不关闭（紧急告警） */
-  document.addEventListener("keydown", function (e) {
-    if (overlay.hidden) return;
-    if (e.key === "Escape") {
-      e.preventDefault();
-      announce("告警需确认后才能关闭");
+  /* ---------------- F4：睡前安全确认 ---------------- */
+  function openBedtime() {
+    prevFocus = document.activeElement;
+    Array.prototype.forEach.call(bedOverlay.querySelectorAll('input[type="checkbox"]'), function (c) { c.checked = false; });
+    bedOverlay.hidden = false;
+    var first = bedOverlay.querySelector('input[type="checkbox"]');
+    if (first) first.focus();
+    announce("睡前安全确认，请逐项确认");
+  }
+  function closeBedtime() {
+    bedOverlay.hidden = true;
+    if (prevFocus && prevFocus.focus) prevFocus.focus();
+  }
+  function completeBedtime() {
+    var boxes = Array.prototype.slice.call(bedOverlay.querySelectorAll('input[type="checkbox"]'));
+    var unchecked = boxes.filter(function (c) { return !c.checked; });
+    if (unchecked.length) {
+      announce("还有 " + unchecked.length + " 项未确认，请先确认");
+      unchecked[0].focus();
       return;
     }
-    if (e.key === "Tab") {
-      e.preventDefault();
-      ackBtn.focus();
+    settings.lastBedtime = Date.now();
+    saveSettings();
+    renderBoard();
+    closeBedtime();
+    announce("已进入睡眠值守");
+  }
+  $("openBedtime").addEventListener("click", openBedtime);
+  $("bedtimeDone").addEventListener("click", completeBedtime);
+  $("bedtimeCancel").addEventListener("click", closeBedtime);
+
+  /* ---------------- 焦点管理 ---------------- */
+  document.addEventListener("keydown", function (e) {
+    if (!overlay.hidden) {
+      if (e.key === "Escape") { e.preventDefault(); announce("告警需确认后才能关闭"); return; }
+      if (e.key === "Tab") { e.preventDefault(); ackBtn.focus(); }
+      return;
+    }
+    if (!bedOverlay.hidden) {
+      if (e.key === "Escape") { e.preventDefault(); closeBedtime(); return; }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        var focusables = Array.prototype.slice.call(bedOverlay.querySelectorAll('input, button'));
+        var i = focusables.indexOf(document.activeElement);
+        var next = focusables[(i + (e.shiftKey ? -1 : 1) + focusables.length) % focusables.length];
+        if (next) next.focus();
+      }
     }
   });
 
   /* ---------------- 设置交互 ---------------- */
   $("modeGroup").addEventListener("click", function (e) {
-    var btn = e.target.closest("button[data-mode]");
-    if (!btn) return;
-    settings.mode = btn.dataset.mode;
-    saveSettings();
-    applySettings();
-    renderBoard();
+    var btn = e.target.closest("button[data-mode]"); if (!btn) return;
+    settings.mode = btn.dataset.mode; saveSettings(); applySettings(); renderBoard();
   });
-
-  $("sensitivity").addEventListener("change", function (e) {
-    settings.sensitivity = e.target.value;
-    saveSettings();
-    renderBoard();
-  });
-
-  $("reduceMotion").addEventListener("change", function (e) {
-    settings.reduceMotion = e.target.checked;
-    saveSettings();
-    applySettings();
-  });
+  $("sensitivity").addEventListener("change", function (e) { settings.sensitivity = e.target.value; saveSettings(); renderBoard(); });
+  $("reduceMotion").addEventListener("change", function (e) { settings.reduceMotion = e.target.checked; saveSettings(); applySettings(); });
 
   /* ---------------- 记录筛选 / 清空 ---------------- */
   $("filters").addEventListener("click", function (e) {
@@ -932,15 +941,11 @@ body.reduced .vibrate { display: none; }
       Array.prototype.forEach.call(document.querySelectorAll("#filters .chip[data-filter]"), function (b) {
         b.setAttribute("aria-pressed", String(b === chip));
       });
-      renderRecords();
-      return;
+      renderRecords(); return;
     }
     if (e.target.id === "clearRecords") {
       if (window.confirm("确定清空全部事件记录吗？此操作不可撤销。")) {
-        events = [];
-        writeJSON(STORE_EVENTS, events);
-        renderBoard();
-        renderRecords();
+        events = []; writeJSON(STORE_EVENTS, events); renderBoard(); renderRecords();
       }
     }
   });
@@ -951,8 +956,7 @@ body.reduced .vibrate { display: none; }
       var kind = btn.dataset.edge;
       edgeDemo = kind === "reset" ? null : kind;
       if (kind === "loadfail") storageError = true;
-      renderBoard();
-      renderRecords();
+      renderBoard(); renderRecords();
     });
   });
 
